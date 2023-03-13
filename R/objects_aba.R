@@ -1,4 +1,4 @@
-setClass(Class = "abao", slots = c(work.dir = "character", ori.df = "data.frame", ori.gr = "GRanges", 
+setClass(Class = "abao", slots = c(work.dir = "character", ori.df = "data.frame", ori.gr = "GRanges",
                                    ori.fa = "list", aln.fa = "list", map = "list", meta.data = "list"))
 
 .DollarNames.abao <- function(x, pattern="") {
@@ -29,10 +29,10 @@ setClass(Class = "abao", slots = c(work.dir = "character", ori.df = "data.frame"
 }
 
 
-aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed, 
+aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
                        mask.lower.regex = NULL,
                        mafft = MAFFT.DEFAULT, mafft.params = MAFFT.AUTO,
-                       do.prank = F, prank = PRANK, 
+                       do.prank = F, prank = PRANK,
                        do.phyml = F,
                        work.dir, threads = 1, fa.root.name = NULL) {
   if (is.null(fa.root.name))
@@ -52,14 +52,14 @@ aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
       aba.df <- read.table(aba.df, sep = "\t", as.is = T, quote = "", header = T)
     }
   }
-  
+
   aba.df$regionID <- gsub("[^A-Za-z0-9]", ".", aba.df$regionID)
-  
+
   if (!is.null(genome))
     aba.df$genome <- genome
   if (!is.null(fa))
     aba.df$fa <- fa
-  ori.fa <- get.fasta.bed.2(df = aba.df, genome = genome, fa = fa, 
+  ori.fa <- get.fasta.bed.2(df = aba.df, genome = genome, fa = fa,
                             df.is.bed = df.is.bed, threads = threads)
   if (!is.null(mask.lower.regex)) {
     to.mask <- names(ori.fa) %>% .[grepl(paste0(mask.lower.regex, collapse = "|"), .)]
@@ -77,21 +77,21 @@ aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
   if (do.prank == T) {
     prank.root <- paste0(work.dir, "/prank/", basename(ori.fa.file) %>% sub("in.fa", "prank",.))
     trash <- prank.fanc(in.fa = ori.fa.file,
-                        out.root.name = prank.root, 
+                        out.root.name = prank.root,
                         use.F = T, prank = prank)
   }
-  
+
   map <- map.space(aligned.fa = aln.fa, threads = threads)
-  abao <- new("abao", work.dir = work.dir, ori.df = aba.df, 
+  abao <- new("abao", work.dir = work.dir, ori.df = aba.df,
               ori.gr = GenomicRanges::makeGRangesFromDataFrame(aba.df, keep.extra.columns = T),
-              ori.fa = ori.fa, aln.fa = aln.fa, map = map, 
+              ori.fa = ori.fa, aln.fa = aln.fa, map = map,
               meta.data = list(mafft = mafft, mafft.params = mafft.params, fa.root.name = fa.root.name))
-  
+
   fasta2phylip(in.fasta = paste0(abao@work.dir, "/", fa.root.name, "aligned.fa"))
   saveRDS(abao, paste0(abao@work.dir, "/abao.Rds"))
   aba.write.ori.df(abao)
   abao <- aba.add.consensus(abao)
-  abao <- aba.add.consensus(abao, shrink.all = T)
+  # abao <- aba.add.consensus(abao, shrink.all = T)
   if (do.phyml) {
     phyml.GTR.GIF(in.phy = paste0(abao@work.dir, "/", fa.root.name, "aligned.phy"))
   }
@@ -103,7 +103,7 @@ map.space <- function(aligned.fa, threads =1) {
   #   in.fa <- read.fasta.fanc(in.fa)
   if (is.character(aligned.fa))
     aligned.fa <- read.fasta.fanc(aligned.fa)
-  
+
   maps <- mclapply(aligned.fa, function(fa) {
     # browser()
     df <- data.frame(aln = 1:length(fa),
@@ -116,13 +116,13 @@ map.space <- function(aligned.fa, threads =1) {
   return(maps)
 }
 
-aba.subset <- function(abao, smart.cut.df = NULL, regionIDs = NULL, regionIDs.exclude = NULL, 
+aba.subset <- function(abao, smart.cut.df = NULL, regionIDs = NULL, regionIDs.exclude = NULL,
                        ori.df.only = F,
                        new.work.dir, threads = 6,
                        check.grep.only = F,
                        mafft = MAFFT.DEFAULT, mafft.params = MAFFT.AUTO, ...) {
   # mode can be "union" or "intersect"
-  # smart.cut.df is genome ordinates based. can be gr object. 
+  # smart.cut.df is genome ordinates based. can be gr object.
   #the only metadata column used in regionID. buffer (which is present in a traditional smart.cut.df) is ignored
   # .cut.df: mapped to alignment space (the first nuc in aln space is 1.)
   warning("smart.cut.df only supports 1 region")
@@ -142,7 +142,7 @@ aba.subset <- function(abao, smart.cut.df = NULL, regionIDs = NULL, regionIDs.ex
   }
   if (!is.null(smart.cut.df)) {
     .cut.df <- aba.map.2.consensus(abao = abao, df = smart.cut.df)
-    new.ori.df <- new.ori.df %>% split(., f = factor(.$regionID, levels = .$regionID)) %>% 
+    new.ori.df <- new.ori.df %>% split(., f = factor(.$regionID, levels = .$regionID)) %>%
       lapply(function(df) {
         ori <- abao@map[[df$regionID]] %>% filter(aln >= .cut.df$start, aln <= .cut.df$end) %>%
           pull(ori) %>% .[!is.na(.)]
@@ -153,7 +153,7 @@ aba.subset <- function(abao, smart.cut.df = NULL, regionIDs = NULL, regionIDs.ex
           if(df$strand == "-") {
             anchor <- df$end
             ori <- -1 * ori
-          } else 
+          } else
             anchor <- df$start
         } else {
           anchor <- df$start
@@ -183,7 +183,7 @@ aba.subset.batch <- function(df, out.dir, threads.aba = 1, npar = 1) {
     stop(paste0("required columns not found: \n",
                 paste0(not.found, collapse = ", "), "\n"))
   }
-  df %>% split(f = 1:nrow(df)) %>% 
+  df %>% split(f = 1:nrow(df)) %>%
     utilsFanc::safelapply(function(line) {
       print(paste0("processing line: ", line$name))
       smartcut <- readRDS(line$abao)@ori.df %>% .[.$regionID == line$ref.region,]
@@ -197,14 +197,14 @@ aba.subset.batch <- function(df, out.dir, threads.aba = 1, npar = 1) {
       if (is.na(line$end)) {
         line$end <- smartcut$end - smartcut$start + 1
       }
-      
+
       line$start <- max(line$start, 1)
       line$end <- min(line$end, smartcut$end)
-      
+
       if (line$end < line$start) {
         stop("line$end < line$start")
       }
-      
+
       if (!is.null(smartcut$strand) && smartcut$strand == "-") {
         warning("have not tested the negative strand scenario!")
         smartcut$end <- smartcut$end - line$start + 1
@@ -213,20 +213,20 @@ aba.subset.batch <- function(df, out.dir, threads.aba = 1, npar = 1) {
         smartcut$start <- smartcut$start + line$start -1
         smartcut$end <- smartcut$start + line$end - line$start
       }
-      
+
       out.dir <- paste0(out.dir, "/", line$name, "/")
       if (!is.na(line$include))
         regions.include <- unlist(strsplit(line$include, split = ", *"))
       else
         regions.include <- NULL
-      
+
       if (!is.na(line$exclude))
         regions.exclude <- unlist(strsplit(line$exclude, split = ", *"))
       else
         regions.exclude <- NULL
-      trash <- aba.subset(abao = line$abao, smart.cut.df = smartcut, 
+      trash <- aba.subset(abao = line$abao, smart.cut.df = smartcut,
                           regionIDs = regions.include,
-                          regionIDs.exclude = regions.exclude, 
+                          regionIDs.exclude = regions.exclude,
                           new.work.dir = out.dir, threads = threads.aba)
       return()
     }, threads = npar)
@@ -239,7 +239,7 @@ aba.subset.region.core <- function(abao, ori.df, .cut.df) {
   # format of .cut.df: chr (must be "aln"), start, end. other columns ignored.
   if (nrow(.cut.df) != 1)
     stop("nrow(.cut.df) != 1")
-  new.ori.df <- ori.df %>% split(., f = factor(.$regionID, levels = .$regionID)) %>% 
+  new.ori.df <- ori.df %>% split(., f = factor(.$regionID, levels = .$regionID)) %>%
     lapply(function(df) {
       ori <- abao@map[[df$regionID]] %>% filter(aln >= .cut.df$start, aln <= .cut.df$end) %>%
         pull(ori) %>% .[!is.na(.)]
@@ -250,7 +250,7 @@ aba.subset.region.core <- function(abao, ori.df, .cut.df) {
         if(df$strand == "-") {
           anchor <- df$end
           ori <- -1 * ori
-        } else 
+        } else
           anchor <- df$start
       } else {
         anchor <- df$start
@@ -272,10 +272,10 @@ aba.consensus.2.bed <- function(abao, aln.df, out.dir, root.name = NULL, ignore.
   if (is.null(aln.df$int.name)) {
     aln.df$int.name <- "."
   }
-  abao@ori.df %>% split(., f = .[, split.by]) %>% 
+  abao@ori.df %>% split(., f = .[, split.by]) %>%
     lapply(function(ori.df.sub) {
       split.name <- ori.df.sub[, split.by][1]
-      bed <- aln.df %>% split(., f = 1:nrow(.)) %>% 
+      bed <- aln.df %>% split(., f = 1:nrow(.)) %>%
         lapply(function(.cut.df) {
           bed <- aba.subset.region.core(abao = abao, ori.df = ori.df.sub, .cut.df = .cut.df)
           if (is.null(bed$strand))
@@ -285,14 +285,14 @@ aba.consensus.2.bed <- function(abao, aln.df, out.dir, root.name = NULL, ignore.
             return(bed[, c("chr", "start", "end", "name", "regionID")])
           }
           return(bed[, c("chr", "start", "end", "name", "regionID", "strand")])
-          
+
         }) %>% Reduce(rbind, .)
       if (split.by.int.name == F) {
         out.file <- paste0(out.dir, "/", basename(abao@work.dir),
                            "_", root.name, "_", split.name, ".bed" )
         utilsFanc::write.zip.fanc(df = bed, out.file = out.file, bed.shift = T)
       } else {
-        bed %>% split(., f = .$name) %>% 
+        bed %>% split(., f = .$name) %>%
           lapply(function(bed.sub) {
             sub.name <- bed.sub$name[1]
             out.file <- paste0(out.dir, "/", basename(abao@work.dir),
@@ -320,7 +320,7 @@ aba.export.fasta <- function(abao, regions.df, mode, out.fa) {
   return(out.fa)
 }
 
-aba.add.consensus <- function(abao, shrink.all = F, 
+aba.add.consensus <- function(abao, shrink.all = F,
                               ambiguityMap = "N", threshold = 0.5, regions.use = NULL,
                               consensus.name = NULL, consensus.doc = NULL, force = F) {
   if (is.null(consensus.name)) {
@@ -332,12 +332,12 @@ aba.add.consensus <- function(abao, shrink.all = F,
     if (shrink.all) {
       consensus.name <- paste0(consensus.name, "_A")
     }
-    
+
   }
   if (is.null(consensus.doc)) {
     consensus.doc <- consensus.name
   }
-  
+
   if (!is.null(abao@meta.data$consensus[[consensus.name]]) && force == F)
     stop(paste0(consensus.name, " already present"))
   seq.list <- abao@aln.fa
@@ -357,14 +357,14 @@ aba.add.consensus <- function(abao, shrink.all = F,
   sub.mat <- cbind(rbind(sub.mat, "-"=-8), "-"=-8)
   # stolen from the msa examples. https://rdrr.io/bioc/msa/man/msaConservationScore-methods.html
   cons.score <- msa::msaConservationScore(cons.mat, sub.mat, gapVsGap=0)
-  cons.string <- Biostrings::consensusString(strings, ambiguityMap = ambiguityMap, 
+  cons.string <- Biostrings::consensusString(strings, ambiguityMap = ambiguityMap,
                                              threshold = threshold)
   shrink.map <- data.frame(seq = cons.string %>% strsplit(split = "") %>% unlist(),
                            pos.full = 1:nchar(cons.string))
-  
+
   if (shrink.all) {
     mat <- abao@aln.fa %>% as.data.frame() %>% t() %>% as.matrix()
-    bmat <- !(mat %in% c("A", "T", "C", "G", "a", "t", "c", "g")) %>% 
+    bmat <- !(mat %in% c("A", "T", "C", "G", "a", "t", "c", "g")) %>%
       matrix(nrow = nrow(mat))
     bGap <- colSums(bmat) > 0
     shrink.map <- shrink.map[!bGap, ]
@@ -372,8 +372,8 @@ aba.add.consensus <- function(abao, shrink.all = F,
     shrink.map <- shrink.map %>% filter(seq != "-")
   }
   shrink.map$pos.shrink <- 1:nrow(shrink.map)
-  cons.list <- list(seq = cons.string, 
-                    seq.shrink = cons.string %>% strsplit("") %>% unlist() %>% 
+  cons.list <- list(seq = cons.string,
+                    seq.shrink = cons.string %>% strsplit("") %>% unlist() %>%
                       .[shrink.map$pos.full] %>% paste0(collapse = ""),
                     cons.score = cons.score,
                     cons.score.shrink = cons.score[shrink.map$pos.full],
@@ -383,27 +383,27 @@ aba.add.consensus <- function(abao, shrink.all = F,
   if (is.null(abao@meta.data$consensus))
     abao@meta.data$consensus <- list()
   abao@meta.data$consensus[[consensus.name]] <- cons.list
-  
+
   out.dir <- paste0(abao@work.dir, "/cons/", consensus.name, "/")
   dir.create(out.dir, showWarnings = F, recursive = T)
   out.file <- paste0(out.dir, "/", abao@meta.data$fa.root.name, consensus.name, ".fa")
   seqinr::write.fasta(sequences =  cons.string, names = consensus.name, file.out = out.file)
-  
+
   out.file <- paste0(out.dir, "/", abao@meta.data$fa.root.name, consensus.name, "_shrink.fa")
   seqinr::write.fasta(sequences =  cons.list$seq.shrink, names = consensus.name, file.out = out.file)
-  
+
   lapply(c(T, F), function(bOmit.cons) {
     lapply(c(T, F), function(bShrink) {
       omit <- ifelse(bOmit.cons, "",  "_wCons")
       shrink <- ifelse(bShrink, "_shrink", "")
       out.file <- paste0(out.dir, "/", abao@meta.data$fa.root.name, consensus.name,
                          shrink, omit, ".fa")
-      aba.write.consensus.with.aln.2(abao = abao, cons.name = consensus.name, 
+      aba.write.consensus.with.aln.2(abao = abao, cons.name = consensus.name,
                                      omit.cons = bOmit.cons, shrink = bShrink,
                                      out.file = out.file)
     })
   })
-  
+
   # write conservation score as bdg:
   lapply(c("cons.score", "cons.score.shrink"), function(x) {
     vec <- cons.list[[x]]
@@ -414,8 +414,8 @@ aba.add.consensus <- function(abao, shrink.all = F,
       chr <- consensus.name
     df <- data.frame(chr = chr, start = (1:l) - 1, end = 1:l, score = vec)
     trash <- utilsFanc::write.zip.fanc(df = df,
-                                       out.file = paste0(out.dir, "/", abao@meta.data$fa.root.name, 
-                                                         consensus.name, "_", x,".bdg"), 
+                                       out.file = paste0(out.dir, "/", abao@meta.data$fa.root.name,
+                                                         consensus.name, "_", x,".bdg"),
                                        bed.shift = F)
     return()
   })
@@ -443,7 +443,7 @@ aba.write.consensus.with.aln <- function(abao, cons.name,  smart.cut.df = NULL, 
     out.file <- paste0(abao@work.dir, "/", basename(abao@work.dir), "_", cons.name,"_", shrink,"_wAln.fa")
   }
   dir.create(dirname(out.file), showWarnings = F, recursive = T)
-  
+
   seqinr::write.fasta(sequences = as.list(strings), names = names(strings),
                       file.out = out.file, as.string = F)
   return()
@@ -454,7 +454,7 @@ aba.write.consensus.with.aln.2 <- function(abao, cons.name, aln.list = NULL,
                                            shrink = F,  smart.cut.df = NULL, omit.cons = F,
                                            max.gap.frac = 1,
                                            out.file = NULL) {
-  
+
   if (is.null(aln.list)) {
     if (is.character(abao)) {
       abao <- readRDS(abao)
@@ -473,13 +473,13 @@ aba.write.consensus.with.aln.2 <- function(abao, cons.name, aln.list = NULL,
                               location.col = "pos.full", n.breaks = NULL)[[1]]
     if (shrink == T)
       aln.df <- aln.df[!is.na(aln.df$pos.shrink),]
-    
+
     aln.list <- aln.df[, c(cons.name, names(abao@aln.fa))] %>% as.list()
     if (omit.cons) {
       aln.list <- aln.list[-1]
     }
   }
-  
+
   if (max.gap.frac < 1) {
     bPass <- sapply(aln.list, function(x) {
       t <- table(x)
@@ -499,16 +499,16 @@ aba.write.consensus.with.aln.2 <- function(abao, cons.name, aln.list = NULL,
   if (!is.null(regionIDs.exclude)) {
     aln.list <- aln.list[!grepl(paste0(regionIDs.exclude, collapse = "|"), names(aln.list))]
   }
-  
+
   if (is.null(out.file)) {
     out.file <- paste0(abao@work.dir, "/", basename(abao@work.dir), "_", cons.name,"_", shrink,"_wAln.fa")
   }
   dir.create(dirname(out.file), showWarnings = F, recursive = T)
-  
+
   seqinr::write.fasta(sequences = aln.list, names = names(aln.list),
                       file.out = out.file, as.string = F)
   return()
-  
+
 }
 
 aba.write.consensus <- function(abao, cons.name = NULL, shrink, out.dir = NULL, root.name = NULL) {
@@ -519,26 +519,26 @@ aba.write.consensus <- function(abao, cons.name = NULL, shrink, out.dir = NULL, 
     cons.name <- names(abao@meta.data$consensus)
   }
   if (shrink == T) {
-    slot <- "seq.shrink" 
+    slot <- "seq.shrink"
     suffix <- "_shrink"
   } else {
     slot <- "seq"
     suffix <- ""
   }
-  
+
   if (is.null(out.dir)) {
     out.dir <- abao@work.dir
   }
-  
+
   system(paste0("mkdir -p ", out.dir))
-  
+
   if (is.null(root.name)) {
     root.name <- basename(abao@work.dir)
   }
   outfile <- paste0(out.dir, "/", root.name,"_", cons.name, suffix, ".fa")
-  
+
   seqinr::write.fasta(sequences = abao@meta.data$consensus[[cons.name]][[slot]],
-                      as.string = T, nbchar = 80, names = cons.name, 
+                      as.string = T, nbchar = 80, names = cons.name,
                       file.out = paste0(outfile))
   return()
 }
@@ -547,13 +547,13 @@ bp.df.gen <- function(data.gr, region.df=NULL) {
   if (is.null(region.df))
     region.df <- data.gr
   if (!is.data.frame(region.df)) {
-    region.df <- region.df %>% `names<-`(NULL) %>% as.data.frame() 
+    region.df <- region.df %>% `names<-`(NULL) %>% as.data.frame()
     region.df$chr <- region.df$seqnames
   }
-  
+
   start <- region.df$start %>% min()
   end <- region.df$end %>% max()
-  
+
   if (length(seqnames(data.gr) %>% unique()) > 1)
     stop("only one chromosome is allowed")
   if (length(region.df$chr %>% unique()) > 1)
@@ -563,7 +563,7 @@ bp.df.gen <- function(data.gr, region.df=NULL) {
       stop("chromosome must match")
   }
   chr <- as.character(region.df$chr[1])
-  bp.gr <- data.frame(chr = chr, start = start:end, end = start:end) %>% 
+  bp.gr <- data.frame(chr = chr, start = start:end, end = start:end) %>%
     GenomicRanges::makeGRangesFromDataFrame()
   j.gr <- bp.gr %>% plyranges::join_overlap_left(data.gr)
   return(j.gr)
@@ -585,14 +585,14 @@ aba.add.track <- function(abao, track.df = NULL, bTrack.df.regionID.regex = F,
     track.df <- data.frame(regionID = track.regionID, track.name = track.name,
                            track.type = track.type, track.file = track.file)
     prepend.regionID <- T
-  } 
+  }
   if (is.character(track.df))
     track.df <- read.table(track.df, header = T, as.is = T, sep = "\t", quote="")
   # browser()
   if (bTrack.df.regionID.regex) {
-    track.df <- track.df %>% split(., f = 1:nrow(.)) %>% 
+    track.df <- track.df %>% split(., f = 1:nrow(.)) %>%
       lapply(function(track.df) {
-        track.df <- cbind(abao@ori.df$regionID %>% .[grepl(track.df$regionID[1], .)], track.df[, colnames(track.df) != "regionID"]) 
+        track.df <- cbind(abao@ori.df$regionID %>% .[grepl(track.df$regionID[1], .)], track.df[, colnames(track.df) != "regionID"])
         colnames(track.df)[1] <- "regionID"
         return(track.df)
       }) %>% Reduce(rbind, .)
@@ -600,7 +600,7 @@ aba.add.track <- function(abao, track.df = NULL, bTrack.df.regionID.regex = F,
   track.df$regionID <- gsub("[^A-Za-z0-9]", ".", track.df$regionID)
   track.df$track.name <- gsub("[^A-Za-z0-9]", ".", track.df$track.name)
   track.df <- track.df %>% filter(regionID %in% abao@ori.df$regionID)
-  
+
   if (prepend.regionID == T) {
     track.df$track.name <- paste0(track.df$regionID, "..", track.df$track.name)
   }
@@ -608,7 +608,7 @@ aba.add.track <- function(abao, track.df = NULL, bTrack.df.regionID.regex = F,
   if (sum(duplicated(track.df$name)) > 0) {
     stop("track name must be unique")
   }
-  track.bp <- track.df %>% split(., f = factor(.$track.name, levels = .$track.name)) %>% 
+  track.bp <- track.df %>% split(., f = factor(.$track.name, levels = .$track.name)) %>%
     mclapply(function(track) {
       print(track$track.name)
       region <- abao@ori.gr %>% plyranges::filter(regionID == track$regionID)
@@ -647,14 +647,14 @@ aba.add.track <- function(abao, track.df = NULL, bTrack.df.regionID.regex = F,
       }
       return(gr.bp)
     }, mc.cleanup = T, mc.cores = threads)
-  
+
   abao[[paste0("track.bp.", track.type)]] <- track.bp
   track.bp.df <- mclapply(seq_along(track.bp), function(i) {
     # track <- track.bp$Klra8..CAGE
     track.name.i <- names(track.bp)[i]
-    track <- track.bp[[i]] %>% `names<-`(NULL) %>% mcols() %>% as.data.frame() 
+    track <- track.bp[[i]] %>% `names<-`(NULL) %>% mcols() %>% as.data.frame()
     track <- track %>% mutate(ori = 1:nrow(track), track.name = track.name.i) # %>% select(ori, score)
-    
+
     regionID <- abao$track.df %>% filter(track.name == track.name.i) %>% pull(regionID)
     map <- abao@map[[regionID]]
     track.mapped <- left_join(track, map) # %>% pull(score)
@@ -696,7 +696,7 @@ aba.write.ori.df <- function(abao, as.bed = T, split.by = "genome") {
   } else {
     stop("not developed. currently only output bed files")
   }
-  
+
 }
 
 aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = NULL,
@@ -704,11 +704,11 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
                         broadcast = F, fill.gap = F, bed.same.color = F,
                         abs = F, scale.row = F, normalize.row = T,normalize.to.max = F,
                         cluster.tracks = F,
-                        remove.zero.tracks = F, 
+                        remove.zero.tracks = F,
                         x.lim = NULL, project.x.to = NULL,
                         add.grid = T, grid.line.size = 0.1,
-                        plot.out = NULL, height=5, width=20, text.size = NULL, 
-                        add.nucleotide = F, gap.only = F, 
+                        plot.out = NULL, height=5, width=20, text.size = NULL,
+                        add.nucleotide = F, gap.only = F,
                         atcg.size = NULL, sub.align.out = NULL) {
   # arguments specific for bdg tracks: abs, scale.row, cluster.tracks, remove.zero.tracks
   track.bp.df <- abao@meta.data[[paste0("track.bp.df.", track.type)]]
@@ -721,11 +721,11 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
                              project.breaks.to = project.x.to)
     track.bp.df <- cut.res[[1]]
   }
-  
+
   if (!is.null(tracks.include)) {
     track.bp.df <- track.bp.df %>% filter(track.name %in% tracks.include)
   }
-  
+
   tracks.all <- track.bp.df %>% pull(track.name) %>% unique()
   tracks <- tracks.all
   # track.bp.df <- track.bp.df %>% filter(track.name %in% tracks)
@@ -735,7 +735,7 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
       stop("length(tracks) < 1")
     }
   } else if (use.mafft.order == T) {
-    tracks <- data.frame(regionID = names(abao@map)) %>% left_join(abao$track.df) %>% pull(track.name) %>% 
+    tracks <- data.frame(regionID = names(abao@map)) %>% left_join(abao$track.df) %>% pull(track.name) %>%
       .[!is.na(.)]
   }
   if (track.type == "bdg") {
@@ -743,37 +743,37 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
       track.sum <- track.bp.df %>% group_by(track.name) %>% filter(!is.na(score)) %>% summarise(sum = sum(score))
       tracks.non.zero <- track.sum %>% filter(sum != 0) %>% pull(track.name) %>% unique()
       tracks <- tracks[tracks %in% tracks.non.zero]
-    } 
+    }
     track.bp.df <- track.bp.df %>% filter(track.name %in% tracks)
     if (abs == T) {
       track.bp.df$score <- abs(track.bp.df$score)
     }
-    
+
     if (cluster.tracks == T && use.mafft.order == F && is.null(use.order)) {
-      non.all.zero <- track.bp.df %>% na.omit() %>% group_by(aln) %>% 
+      non.all.zero <- track.bp.df %>% na.omit() %>% group_by(aln) %>%
         summarise(nz = sum(score != 0) > 0) %>% filter(nz == T) %>% pull(aln)
-      
-      track.scale.center <- track.bp.df %>% filter(aln %in% non.all.zero) %>% 
-        group_by(track.name) %>% mutate(score = scale(score, center = T)) %>% 
+
+      track.scale.center <- track.bp.df %>% filter(aln %in% non.all.zero) %>%
+        group_by(track.name) %>% mutate(score = scale(score, center = T)) %>%
         ungroup() %>% as.data.frame()
       mat <- reshape2::acast(track.scale.center, formula = aln ~ track.name, value.var = "score")
       tracks <- get.dendro.order(as.data.frame(mat), axis = 2)
     }
-    
+
     if (scale.row == T) {
-      track.bp.df <- track.bp.df %>% group_by(track.name) %>% mutate(score = scale(score, center = F)) %>% 
+      track.bp.df <- track.bp.df %>% group_by(track.name) %>% mutate(score = scale(score, center = F)) %>%
         ungroup() %>% as.data.frame()
     } else if (normalize.row == T) {
       if (normalize.to.max) {
-        track.bp.df <- track.bp.df %>% group_by(track.name) %>% mutate(score = score/(max(score) + 1)) %>% 
+        track.bp.df <- track.bp.df %>% group_by(track.name) %>% mutate(score = score/(max(score) + 1)) %>%
           ungroup() %>% as.data.frame()
       } else {
-        track.bp.df <- track.bp.df %>% group_by(track.name) %>% mutate(score = score/(sum(score) + 1)) %>% 
+        track.bp.df <- track.bp.df %>% group_by(track.name) %>% mutate(score = score/(sum(score) + 1)) %>%
           ungroup() %>% as.data.frame()
       }
-      
+
     }
-    
+
     if (!is.null(smart.cut.df)) {
       track.bp.df$aln <- factor(track.bp.df$aln, levels = cut.res$levels)
     }
@@ -782,26 +782,26 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
       geom_tile() +
       # scale_fill_gradient(low="white", high="red4") +
       #scale_fill_gradientn(colours = c("white", "red1", "red2", "red4"),
-      #                     values = c(0, 0.1, 0.8, 1.0)) + 
+      #                     values = c(0, 0.1, 0.8, 1.0)) +
       scale_fill_gradientn(colours = c("white", col.fun(0.15), "red4"),
                            values = c(0, 0.05, 1.0)) +
-      theme_classic() + 
+      theme_classic() +
       theme(panel.background = element_rect(fill = "grey88",
                                             colour = "grey88")) +
       theme(legend.position = "bottom")
     # browser()
   }
-  
+
   if (track.type %in% c("bed", "rmsk")) {
     if (fill.gap == T) {
       #browser()
-      track.bp.df <- track.bp.df %>% split(., f= factor(.$track.name, levels = unique(.$track.name))) %>% 
+      track.bp.df <- track.bp.df %>% split(., f= factor(.$track.name, levels = unique(.$track.name))) %>%
         lapply(function(df) {
           regionID <- aba.get.regionID(abao, df$track.name[1])
-          feature.bound <- df %>% group_by(forth) %>% summarise(start = min(aln), end = max(aln)) %>% 
+          feature.bound <- df %>% group_by(forth) %>% summarise(start = min(aln), end = max(aln)) %>%
             ungroup() %>% as.data.frame()
           j <- left_join(abao@map[[regionID]], df)
-          filled <- feature.bound %>% split(., f=1:nrow(.)) %>% 
+          filled <- feature.bound %>% split(., f=1:nrow(.)) %>%
             lapply(function(feature) {
               filled.sub <- j %>% filter(aln >= feature$start, aln <= feature$end)
               filled.sub$forth <- feature$forth
@@ -811,31 +811,31 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
           return(filled)
         }) %>% Reduce(rbind,.)
     }
-    
+
     if (broadcast == T) {
       track.bp.df$track.name <- "consensus"
       track.bp.df <- track.bp.df %>% unique()
       tracks <- "consensus"
     }
-    
+
     if (!is.null(smart.cut.df)) {
       track.bp.df$aln <- factor(track.bp.df$aln, levels = cut.res$levels)
     }
-    
+
     if (track.type == "bed") {
       if (bed.same.color) {
         p <- ggplot(track.bp.df, aes(x = aln, y = factor(track.name, levels = tracks))) +
           geom_tile(fill = "#0000b2") +
-          theme_classic() 
+          theme_classic()
       } else {
         p <- ggplot(track.bp.df, aes(x = aln, y = factor(track.name, levels = tracks), fill = forth)) +
           geom_tile() +
-          theme_classic() 
-        
+          theme_classic()
+
       }
-      
+
     }
-    
+
     if (track.type == "rmsk") {
       track.bp.df$fifth <- sub("/.+$", "", track.bp.df$fifth)
       p <- ggplot(track.bp.df, aes(x = aln, y = factor(track.name, levels = tracks), fill = fifth)) +
@@ -844,15 +844,15 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
                           breaks = c("LINE", "Low_complexity", "LTR", "Satellite", "Simple_repeat", "SINE", "Unknown", "DNA"))
     }
   }
-  
+
   if (!is.numeric(track.bp.df$aln)) {
     vlines <- cut.res$cut.df.buffer$start
-    
+
     p <- p + scale_x_discrete(drop = F, breaks = factor(cut.res$breaks[-1], # %>% c(vlines),
-                                                        levels = cut.res$levels), 
+                                                        levels = cut.res$levels),
                               labels = cut.res$breaks.proj[-1]) +
       geom_vline(xintercept = factor(vlines, levels = cut.res$levels)[-1], linetype = "dashed")
-    
+
   }
   if (!is.null(text.size)) {
     p <- p + theme(text = element_text(size = text.size))
@@ -862,22 +862,22 @@ aba.plot.hm <- function(abao, track.type, smart.cut.df = NULL, tracks.include = 
     hlines <- 1:(n.hlines-1) + 0.5
     p <- p + geom_hline(yintercept = hlines, linetype = "dashed", size = grid.line.size)
   }
-  
+
   if (add.nucleotide == T) {
     p <- aba.plot.aln(abao, tracks = tracks, p.in = p, x.lim = x.lim, gap.only = gap.only,
                       smart.cut.df = smart.cut.df, atcg.size = atcg.size, sub.align.out = sub.align.out)
   }
   p <- p + theme(axis.line = element_blank(), axis.ticks.y = element_blank())
-  
+
   if (!is.null(plot.out)) {
     dir.create(dirname(plot.out), showWarnings = F, recursive = F)
     ggsave(plot.out, p, width = width, height = height, units = "in", dpi = 100, limitsize = F)
   }
   return(p)
-  
+
 }
 
-aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.type, 
+aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.type,
                             normalize = F, scale.to = 1000,
                             add.constant = NULL, add.per.site = T,
                             tracks.include = NULL,
@@ -886,7 +886,7 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
                             broadcast = F, fill.gap = T,
                             consensus.name, shrink = T,
                             write.consensus = T, consensus.add.N = NULL,
-                            x.lim = NULL, 
+                            x.lim = NULL,
                             return.matrix = F, out.dir = NULL, root.name = NULL,
                             samtools = SAMTOOLS, bedtools = BEDTOOLS,
                             push.2.igv = T) {
@@ -898,7 +898,7 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
     col <- "forth"
   else
     stop("track type not supported")
-  
+
   if (is.null(root.name))
     root.name <- abao@meta.data$fa.root.name
   if (is.null(track.name))
@@ -906,23 +906,23 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
   track.bp.df <- abao@meta.data[[paste0("track.bp.df.", track.name)]]
   if (is.null(track.bp.df))
     stop("is.null(track.bp.df)")
-  
+
   if (!is.null(x.lim)) {
     track.bp.df <- track.bp.df %>% filter(aln >= x.lim[1], aln <= x.lim[2])
   }
-  
+
   if (!is.null(smart.cut.df)) {
     cut.res <- aba.smart.cut(abao = abao, track.bp.df = track.bp.df, smart.cut.df = smart.cut.df)
     track.bp.df <- cut.res[[1]]
   }
-  
+
   if (shrink == T) {
     shrink.map <- abao@meta.data$consensus[[consensus.name]]$shrink.map
     if (is.null(shrink.map))
       stop("is.null(shrink.map)")
     names(shrink.map) <- c("cons.seq", "aln", "pos.shrink")
     if (!is.null(smart.cut.df)) {
-      shrink.map <- cut.res$cut.df.buffer %>% split(., f = 1:nrow(.)) %>% 
+      shrink.map <- cut.res$cut.df.buffer %>% split(., f = 1:nrow(.)) %>%
         lapply(function(cut) {
           df <- shrink.map %>% filter(aln > cut$start, aln < cut$end)
           return(df)
@@ -937,24 +937,24 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
         seq.tmp <- c(seq.tmp, rep("N", consensus.add.N))
       }
       seqinr::write.fasta(sequences = list(seq.tmp),
-                          names = seq.name, 
+                          names = seq.name,
                           file.out = ref.fa)
-      
+
       system(paste0(samtools, " faidx ", ref.fa))
       utilsFanc::bash2ftp(filename = ref.fa)
     }
     ref.length <- length(unique(shrink.map$pos.out))
-    track.bp.df <- inner_join(shrink.map, track.bp.df) 
+    track.bp.df <- inner_join(shrink.map, track.bp.df)
     if (track.type == "bdg" && !return.matrix)
       track.bp.df <- track.bp.df %>% filter(score != 0)
-    
+
     if (track.type %in% c("bed", "rmsk")) {
       track.bp.df <- track.bp.df %>% filter(!is.na(forth))
       if (fill.gap == T) {
-        track.bp.df <- aba.track.fill.gap.2(abao = abao, track.bp.df = track.bp.df, fill.col = "pos.out") %>% 
+        track.bp.df <- aba.track.fill.gap.2(abao = abao, track.bp.df = track.bp.df, fill.col = "pos.out") %>%
           filter(!is.na(pos.out))
       }
-      
+
       if (broadcast == T) {
         track.name <- track.bp.df$track.name %>% unique()
         if (length(track.name) > 1) {
@@ -982,7 +982,7 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
       } else {
         cluster.blocks <- NULL
       }
-      tracks <- aba.cluster.tracks(track.bp.df = track.bp.df, # na.2.zero = T, 
+      tracks <- aba.cluster.tracks(track.bp.df = track.bp.df, # na.2.zero = T,
                                    cluster.blocks = cluster.blocks)
       track.bp.df <- track.bp.df %>% filter(track.name %in% tracks)
       track.bp.df$track.name <- factor(track.bp.df$track.name, levels = tracks)
@@ -993,15 +993,15 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
       } else {
         sort.key <- tracks
       }
-      
+
       if (is.function(track.order)) {
         track.order <- track.order(sort.key, abao = abao, track.bp.df = track.bp.df)
       }
-      
+
       if (track.order[1] == "aln") {
         track.order <- names(abao@aln.fa)
       }
-      
+
       ord <- utilsFanc::sort.by(x = sort.key, y = track.order, return.order = T, missing.method = sort.missing.method)
       tracks <- tracks[ord]
       if (order.only) {
@@ -1013,19 +1013,19 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
       # if(track.type != "bdg") {
       #   stop("to return a matrix, track.type has to be bdg")
       # }
-      mat <- track.bp.df[, c("pos.out", col, "track.name"), drop = F] %>% 
+      mat <- track.bp.df[, c("pos.out", col, "track.name"), drop = F] %>%
         reshape2::acast(formula = track.name ~ pos.out, value.var = col)
       colnames(mat) <- NULL
       mat[is.na(mat)] <- 0
       return(mat)
     }
     system(paste0("mkdir -p ", out.dir))
-    track.files <- track.bp.df %>% split(., f = .$track.name) %>% 
+    track.files <- track.bp.df %>% split(., f = .$track.name) %>%
       lapply(function(track) {
         track.name <- track$track.name[1]
         track <- track[, c("pos.out", col), drop = F]
-        track <- track %>% dplyr::rename(end = pos.out) %>% 
-          dplyr::mutate(start = end -1, chr = seq.name) %>% 
+        track <- track %>% dplyr::rename(end = pos.out) %>%
+          dplyr::mutate(start = end -1, chr = seq.name) %>%
           dplyr::select(chr, start, end, !!as.name(col))
         if (normalize == T) {
           if (!is.null(add.constant)) {
@@ -1041,9 +1041,9 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
           warning("add bedtools to your PATH. Otherwise you will get an error")
           track <- utilsFanc::collapse.bed.fanc(in.bed = track, bedtools.path = bedtools)
         }
-          
+
         track.file <- utilsFanc::write.zip.fanc(df = track,
-                                           out.file = paste0(out.dir, "/", track.name, ".", track.type), 
+                                           out.file = paste0(out.dir, "/", track.name, ".", track.type),
                                            bed.shift = F)
         return(track.file)
       }) %>% unlist()
@@ -1059,13 +1059,13 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
     # track.bp.df$pos.shrink <- track.bp.df$aln
   }
   # verification: pileup_test_2021-08-08.R
-  
+
 }
 
 aba.align.noRepeat <- function(aba.dir, ...) {
   stop("currently not working: fa.cons.shrink somehow requires abao")
   in.fa <- Sys.glob(paste0(aba.dir, "/*in.fa"))
-  
+
   if (length(in.fa) != 1) {
     stop("length(in.fa) != 1")
   }

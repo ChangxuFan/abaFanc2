@@ -2,11 +2,11 @@ add.fa <- function(df, outdir) {
   system(paste0("mkdir -p ", outdir))
   df$fa <- paste0(outdir, "/", df$acc, ".fasta")
   for (i in 1:nrow(df)) {
-    
+
     fa <- entrez_fetch("nuccore", id = df[i, "acc"], rettype = "fasta", api_key ="4d2374d16cee57dded1296ac1a48ba9c3b09")
     write(fa, df[i, "fa"])
   }
-  
+
   trash <- lapply(df$fa, function(x) {
     if(!file.exists(x)) {
       stop(paste0(x, " was not successfully created"))
@@ -40,7 +40,7 @@ get.fasta.bed <- function(bed, root.name=NULL, genome=NULL, source.fasta=NULL, a
     x[1,4] <- name.col
     return(x[,1:4])
   }) %>% Reduce(rbind,.)
-  
+
   write.table(bed.out, paste0(root.name, ".pre.bed"), sep = "\t", quote = F, col.names = F, row.names = F)
   out.fa <- paste0(root.name, ".fa")
   if (!is.null(genome)) {
@@ -53,7 +53,7 @@ get.fasta.bed <- function(bed, root.name=NULL, genome=NULL, source.fasta=NULL, a
     " -fo ", out.fa, " -bed ", root.name, ".pre.bed -name")
   print(cmd)
   system(cmd)
-  
+
   fasta.wrap.fanc(in.fa = out.fa)
   if (return.fasta == T) {
     return(seqinr::read.fasta(out.fa))
@@ -76,16 +76,16 @@ get.fasta.bed.2 <- function(df, genome=NULL, fa=NULL,  df.is.bed, threads = 1, o
       df <- read.table(df, sep = "\t", as.is = T, quote = "", header = T)
     }
   }
-  
+
   if (!is.null(genome))
     df$genome <- genome
   if (!is.null(fa))
     df$fa <- fa
-  
-  if (sum(duplicated(df$regionID)) > 0) 
+
+  if (sum(duplicated(df$regionID)) > 0)
     stop("regionID must be unique")
-  
-  seq.list <- df %>% split(., f = factor(.$regionID, levels = .$regionID)) %>% 
+
+  seq.list <- df %>% split(., f = factor(.$regionID, levels = .$regionID)) %>%
     mclapply(function(x) {
       if (is.null(x$fa) || is.na(x$fa)) {
         x$fa <- paste0("/bar/cfan/genomes/", x$genome, "/", x$genome, ".fa")
@@ -105,13 +105,13 @@ get.fasta.core <- function(genome.fa, chr, start, end, strand=NULL,
   df <- data.frame(chr = chr, start = start, end = end)
   if (!is.null(strand))
     df$strand <- strand
-  if (nrow(df) != 1) 
+  if (nrow(df) != 1)
     stop("get.fasta.core: df must be exactly 1 row")
   gr <- GenomicRanges::makeGRangesFromDataFrame(df)
   bed <- tempfile()
   rtracklayer::export.bed(gr, bed)
   fa <- tempfile()
-  cmd <- paste0(bedtools, " getfasta -fi ", genome.fa, " -bed ", bed, 
+  cmd <- paste0(bedtools, " getfasta -fi ", genome.fa, " -bed ", bed,
                 " -fo ", fa)
   if (!is.null(strand))
     cmd <- paste0(cmd, " -s")
@@ -122,7 +122,7 @@ get.fasta.core <- function(genome.fa, chr, start, end, strand=NULL,
 }
 
 
-get.fasta.gr <- function(gr, id.col = NULL, genome, fa = NULL, outfile = NULL, 
+get.fasta.gr <- function(gr, id.col = NULL, genome, fa = NULL, outfile = NULL,
                           drop.strand = F,
                          wrap.fa = F, return.fa = T, as.string = T, print.cmd = T,
                          bedtools = "/bar/cfan/anaconda2/envs/jupyter/bin/bedtools") {
@@ -140,7 +140,7 @@ get.fasta.gr <- function(gr, id.col = NULL, genome, fa = NULL, outfile = NULL,
   id.vec <- mcols(gr)[, id.col] %>% as.character()
   mcols(gr) <- NULL
   gr$id <- id.vec
-  
+
   bed <- tempfile()
   if (is.null(outfile))
     outfile <- tempfile()
@@ -171,10 +171,10 @@ label.gaps <- function(fa, out.bed = NULL) {
     out.bed <- paste0(tools::file_path_sans_ext(fa), "_gaps.bed")
   }
   seqs <- seqinr::read.fasta(fa)
-  
+
   gr <- lapply(seqs, function(seq) {
-    df <- data.frame(chr = attr(seq,"name"), 
-                     start = 1:length(seq), end = 1:length(seq), 
+    df <- data.frame(chr = attr(seq,"name"),
+                     start = 1:length(seq), end = 1:length(seq),
                      seq = as.vector(seq) %>% toupper())
     df <- df %>% dplyr::filter(seq == "N") %>% dplyr::mutate(seq = NULL)
     gr <- makeGRangesFromDataFrame(df) %>% GenomicRanges::reduce()
@@ -222,7 +222,7 @@ fa.mask.regions <- function(fa.vec, gr.list, master.dir, bowtie2_index = T) {
 }
 
 fa.remove.repeat <- function(in.fa) {
-  fa <- seqinr::read.fasta(file = in.fa, forceDNAtolower = F) 
+  fa <- seqinr::read.fasta(file = in.fa, forceDNAtolower = F)
   map.dir <- paste0(in.fa, "_map/")
   dir.create(map.dir, showWarnings = F, recursive = T)
   noR.seqs <- lapply(fa, function(seq) {
@@ -248,7 +248,7 @@ fa.mask.repeat <- function(in.fa, out.fa = NULL) {
   if (is.null(out.fa)) {
     out.fa <- utilsFanc::insert.name.before.ext(name = in.fa, insert = "maskR", delim = "_")
   }
-  fa <- seqinr::read.fasta(file = in.fa, forceDNAtolower = F) 
+  fa <- seqinr::read.fasta(file = in.fa, forceDNAtolower = F)
   fa <- lapply(fa, function(fa) {
     bk <- fa
     fa[fa %in% base::letters] <- "n"
@@ -265,12 +265,12 @@ fa.aln.remove.gap <- function(in.fa, out.fa = NULL) {
     out.fa <- utilsFanc::insert.name.before.ext(name = in.fa, insert = "noGap", delim = "_")
   }
   dir.create(path = dirname(out.fa), showWarnings = F, recursive = T)
-  
-  map <- data.frame(ori.pos = 1:ncol(fa.mat), b.keep = b.keep) %>% filter(b.keep == T) %>% 
+
+  map <- data.frame(ori.pos = 1:ncol(fa.mat), b.keep = b.keep) %>% filter(b.keep == T) %>%
     dplyr::mutate(., new.pos = 1:nrow(.), b.keep = NULL)
   write.table(map, paste0(out.fa, "_map.tsv"), quote = F, row.names = F, col.names = T, sep = "\t")
   new.fa.mat <- fa.mat[, b.keep]
-  
+
   ape::write.dna(x = new.fa.mat, file = out.fa, format = "fasta", colsep = "")
   fasta2phylip(out.fa)
   return(out.fa)
@@ -294,7 +294,7 @@ fa.2.nex <- function(fa.vec, out.dir = NULL, out.file = NULL, use.partition = T,
     stop("is.null(names(fa.vec))")
   }
   mat.list <- lapply(fa.vec, function(fa) {
-    mat <- Biostrings::readDNAMultipleAlignment(fa) %>% as.matrix()
+    mat <- Biostrings::readDNAMultipleAlignment(fa) %>% Biostrings::as.matrix()
     return(mat)
   })
   taxons <- lapply(mat.list, rownames) %>% Reduce(union,. )
@@ -334,13 +334,13 @@ fa.2.nex <- function(fa.vec, out.dir = NULL, out.file = NULL, use.partition = T,
     write("    set partition=favored;", file = out.file, append = T)
     if (add.mb.GTR) {
       cmd <- c(paste0("lset app=(", paste0(1:length(len), collapse = ","), ") rates=invgamma nst=6;"),
-               "unlink revmat=(all) pinvar=(all) shape=(all) statefreq=(all);", 
+               "unlink revmat=(all) pinvar=(all) shape=(all) statefreq=(all);",
                "prset applyto=(all) ratepr=variable;") %>% paste0("    ", .)
       write(cmd, file = out.file, append = T, sep = "\n")
     }
-    
+
     write("end; ", file = out.file, append = T)
-    
+
   }
   return(out.file)
 }
@@ -370,7 +370,7 @@ fa.simu.sv <- function(in.fa, sv.bed) {
   sv.df <- sv.df[, 1:5]
   colnames(sv.df) <- c("chr", "start", "end", "sv.type", "sv.info")
   utilsFanc::check.intersect(sv.df$chr, "sv.df$chr", names(fa), "names(fa)")
-  
+
   for (i in 1:nrow(sv.df)) {
     sv <- sv.df[i, ]
     id <- ids[[sv$chr]]
@@ -386,7 +386,7 @@ fa.simu.sv <- function(in.fa, sv.bed) {
     }
     if (sv.type == "insertion") {
       if (sv$start - sv$end < 1) {
-        # this is how you code an insertion in bed: chr start start, after bed shift this will be 
+        # this is how you code an insertion in bed: chr start start, after bed shift this will be
         # chr start+1 start
         # so a pure insertion will have sv$start - sv$end == 1, but you could also remove
         # some sequences at the insertion junction, which leads to sv$start < sv$end
@@ -396,7 +396,7 @@ fa.simu.sv <- function(in.fa, sv.bed) {
       if (grepl(":\\d+\\-\\d+", sv$sv.info)) {
         # this means that inserted sequence is encoded as a locus. grep this sequence from fa
         # multiple loci can be supplied via ";" deliminator.
-        loci <- sv$sv.info %>% strsplit(";") %>% unlist() %>% 
+        loci <- sv$sv.info %>% strsplit(";") %>% unlist() %>%
           utilsFanc::loci.2.df(loci.vec = ., remove.loci.col = T)
         if (length(unique(loci$chr)) != 1)
           stop("length(unique(loci$chr)) != 1")
@@ -405,9 +405,9 @@ fa.simu.sv <- function(in.fa, sv.bed) {
         }
         for (j in 1:nrow(loci)) {
           to.ins <- loci$start[j]:loci$end[j]
-          # it's not entirely easy to find where to insert: 
+          # it's not entirely easy to find where to insert:
           # sv$start and sv$end might have been duplicated or inverted or whatever...
-          # but we look for the closest 2 so that we remove 
+          # but we look for the closest 2 so that we remove
         }
       } else if (grepl("^[ATCGatcgNn]+$", sv$sv.info)) {
         stop("not developed yet")
@@ -415,7 +415,7 @@ fa.simu.sv <- function(in.fa, sv.bed) {
         stop(paste0("error at ", i, ": insertion's sv.info is not of correct format"))
       }
     }
-    
+
     ids[[sv$chr]] <- id
   }
 
