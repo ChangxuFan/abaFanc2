@@ -4,6 +4,9 @@ aba.import <- function(abao) {
       abao <- paste0(abao, "/abao.Rds")
     }
     abao <- readRDS(abao)
+    return(abao)
+  } else {
+    return(abao)
   }
 }
 aba.plot.conservation <- function(abao, p.in = NULL, regions.use.regex = NULL,

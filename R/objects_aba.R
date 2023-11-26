@@ -33,7 +33,7 @@ aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
                        mask.lower.regex = NULL,
                        mafft = MAFFT.DEFAULT, mafft.params = MAFFT.AUTO,
                        do.prank = F, prank = PRANK,
-                       do.phyml = F,
+                       do.phyml = F, add.cons = T,
                        work.dir, threads = 1, fa.root.name = NULL) {
   if (is.null(fa.root.name))
     fa.root.name <- basename(work.dir) %>% paste0("_")
@@ -90,7 +90,8 @@ aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
   fasta2phylip(in.fasta = paste0(abao@work.dir, "/", fa.root.name, "aligned.fa"))
   saveRDS(abao, paste0(abao@work.dir, "/abao.Rds"))
   aba.write.ori.df(abao)
-  abao <- aba.add.consensus(abao)
+  if (add.cons)
+    abao <- aba.add.consensus(abao)
   # abao <- aba.add.consensus(abao, shrink.all = T)
   if (do.phyml) {
     phyml.GTR.GIF(in.phy = paste0(abao@work.dir, "/", fa.root.name, "aligned.phy"))
@@ -356,6 +357,8 @@ aba.add.consensus <- function(abao, shrink.all = F,
   sub.mat <- Biostrings::nucleotideSubstitutionMatrix(4, -1, baseOnly = F)
   sub.mat <- cbind(rbind(sub.mat, "-"=-8), "-"=-8)
   # stolen from the msa examples. https://rdrr.io/bioc/msa/man/msaConservationScore-methods.html
+  # it appears that msa::msaConservationScore will error out if there is no gap in your alignment
+  # but I'm not very sure.
   cons.score <- msa::msaConservationScore(cons.mat, sub.mat, gapVsGap=0)
   cons.string <- Biostrings::consensusString(strings, ambiguityMap = ambiguityMap,
                                              threshold = threshold)

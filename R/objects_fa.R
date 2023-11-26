@@ -287,7 +287,8 @@ fa.rm.dot <- function(fa) {
   return()
 }
 
-fa.2.nex <- function(fa.vec, out.dir = NULL, out.file = NULL, use.partition = T, add.mb.GTR = F) {
+fa.2.nex <- function(fa.vec, out.dir = NULL, out.file = NULL, 
+                     use.partition = T, add.mb.GTR = F, ngen = 100000) {
   # partition model for MrBayes
   # fa.vec must be named
   if (is.null(names(fa.vec)) && use.partition) {
@@ -335,13 +336,25 @@ fa.2.nex <- function(fa.vec, out.dir = NULL, out.file = NULL, use.partition = T,
     if (add.mb.GTR) {
       cmd <- c(paste0("lset app=(", paste0(1:length(len), collapse = ","), ") rates=invgamma nst=6;"),
                "unlink revmat=(all) pinvar=(all) shape=(all) statefreq=(all);",
-               "prset applyto=(all) ratepr=variable;") %>% paste0("    ", .)
+               "prset applyto=(all) ratepr=variable;",
+               paste0("mcmc ngen=", ngen,";"),
+               "sump;",
+               "sumt;") %>% paste0("    ", .)
       write(cmd, file = out.file, append = T, sep = "\n")
     }
 
     write("end; ", file = out.file, append = T)
 
+  } else if (add.mb.GTR) {
+    write("begin mrbayes;", file = out.file, append = T)
+    cmd <- c("lset nst=6 rates=invgamma;",
+             paste0("mcmc ngen=", ngen,";"),
+             "sump;",
+             "sumt;") %>% paste0("    ", .)
+    write(cmd, file = out.file, append = T, sep = "\n")
+    write("end; ", file = out.file, append = T)
   }
+  
   return(out.file)
 }
 

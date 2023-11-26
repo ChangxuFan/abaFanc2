@@ -1,10 +1,31 @@
-aba.liftover <- function(abao, bed, regionID.in, regionID.out = NULL, regions.exclude = NULL,
+aba.liftover <- function(abao, bed, is.bw = F, regionID.in, regionID.out = NULL, regions.exclude = NULL,
                          output.each = F, out.file = NULL) {
   # this is just a linear mapping, can't flip strands...
   # regionID.in must be scalar. regionID.out can be a vector
+  abao <- aba.import(abao)
+  in.chr <- abao@ori.df[abao@ori.df$regionID == regionID.in, "chr"]
+
   if (is.character(bed)) {
-    bed <- import.bed.fanc(bed = bed, return.gr = F, no.shift = F)[, 1:6]
+    if (is.bw) {
+      bed <- rtracklayer::import(bed) 
+      bed <- subsetByOverlaps(bed, abao@ori.gr[abao@ori.gr$regionID == regionID.in])
+      bed <- bed %>% utilsFanc::gr2df()
+    } else {
+      bed <- import.bed.fanc(bed = bed, return.gr = F, no.shift = F)[, 1:6]
+    }
   }
+
+  if (is.bw) {
+    bed$width <- NULL
+    bed$strand <- NULL
+    bed$forth <- utilsFanc::gr.get.loci(bed)
+  }
+
+  bed <- bed[bed$chr == in.chr,]
+  if (nrow(bed) < 1) {
+    stop("nrow(bed) < 1")
+  }
+
   df.on.aln <- aba.map.bed.2.consensus(abao = abao, bed = bed, regionID = regionID.in)
   df.lifted <- aba.map.consensus.2.bed(abao = abao, bed = df.on.aln, regions.out = regionID.out, 
                                        regions.exclude = regions.exclude,
@@ -20,8 +41,13 @@ aba.map.bed.2.consensus <- function(abao, bed, regionID) {
   bed.aln <- bed %>% split(., f= 1:nrow(.)) %>% 
     lapply(function(x) {
       ori.df <- abao@ori.df %>% .[.$regionID == regionID, ]
+      
       if (x$chr != ori.df$chr)
         stop("chromosome doesn't match for " %>% paste0(x$forth))
+      
+      x$start <- max(ori.df$start, x$start)
+      x$end <- min(x$end, ori.df$end)
+      
       map <- abao@map[[regionID]]
       map <- map %>% dplyr::mutate(ori.genome = ori + ori.df$start - 1) %>% 
         .[!is.na(.$ori.genome),]
@@ -30,6 +56,7 @@ aba.map.bed.2.consensus <- function(abao, bed, regionID) {
       }
       return(x)
     }) %>% Reduce(rbind, .)
+
   return(bed.aln)
 }
 
@@ -59,9 +86,16 @@ aba.map.consensus.2.bed <- function(abao, bed, regions.out = NULL, regions.exclu
         map <- abao@map[[regionID]]
         map <- map %>% dplyr::mutate(ori.genome = ori + ori.df$start - 1) %>% 
           .[!is.na(.$ori.genome),]
-        for (y in c("start", "end")) {
-          x[, y] <- map %>% .[.$aln == x[, y], "ori.genome"]
+        
+        inRegion <- map %>% .[.$aln >= x[, "start"] & .$aln <= x[, "end"], "ori.genome"]
+        if (length(inRegion) == 0) {
+          print(paste0("Not mapped: aln coordinates start: ", x$start, " ; end: ", x$end))
+          return()
+        } else {
+          x$start <- min(inRegion)
+          x$end <- max(inRegion)
         }
+        
         x$chr <- ori.df$chr
         return(x)
       }) %>% Reduce(rbind, .)
