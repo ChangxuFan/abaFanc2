@@ -61,3 +61,102 @@ gr.find.cluster <- function(gr, name.col, cluster.col = "cluster",
   return(gr.clus)
 }
 
+gene.dist.cal <- function(seqdf, work.dir = NULL, root.name = NULL, first.n = NULL, threads = 1) {
+  # first.n: for debug. Only work on the first n clusters
+  utilsFanc::check.intersect(c("gene", "cluster", "seq"), "required columns", 
+                             colnames(seqdf), "colnames(seqdf)")
+  if (is.null(work.dir)) {
+    work.dir <- tempdir()
+  }
+  dir.create(paste0(work.dir, "/mafft"), showWarnings = F, recursive = T)
+  
+  na.sum <- seqdf %>% dplyr::group_by(cluster) %>% dplyr::summarise(nonNA = sum(!is.na(seq))) %>% 
+    dplyr::ungroup() %>% as.data.frame() %>% 
+    dplyr::filter(nonNA > 1)
+  
+  if (!is.null(first.n)) {
+    na.sum <- na.sum[1:min(nrow(na.sum), first.n),]
+  }
+  
+  seqdf <- seqdf %>% dplyr::filter(cluster %in% na.sum$cluster)
+  if (nrow(seqdf) < 1) {
+    stop("nrow(seqdf) < 1")
+  }
+
+  mats <- seqdf %>% split(f = seqdf$cluster) %>% 
+    utilsFanc::safelapply(function(seqdf) {
+      # n.nonNA <- sum(!is.na(seqdf$seq))
+      # if (n.nonNA < 2) {
+      #   stop(paste0("Error at cluster ", cluster, ": at least 2 non-NA sequences needed"))
+      # }
+      seqdf <- seqdf[!is.na(seqdf$seq),]
+      cluster <- seqdf$cluster[1]
+      fa.in <- paste0(work.dir, "/mafft/", cluster, "_in.fa")
+      fa.aligned <- paste0(work.dir, "/mafft/", cluster, "_aligned.fa")
+      seqinr::write.fasta(sequences = as.list(seqdf$seq), names = seqdf$gene, file.out = fa.in, as.string = T)
+      aln <- mafft.fanc(in.fa = fa.in, aligned.fa = fa.aligned)
+      ape::dist.dna(ape::as.DNAbin(list(seq1 = c("-","-", "A", "T", "C", "-" ,"G"),
+                                        seq2 = c("A", "A", "A", "C", "C", "-", "G"))), model = "raw")
+      # gives 0.25. this means that gaps are not considered to begin with
+      dist.mat <- ape::dist.dna(ape::as.DNAbin(aln), model = "raw", as.matrix = T)
+      return(dist.mat)
+    }, threads = threads)
+  name <- "dist_mats"
+  if (!is.null(root.name)) {
+    name <- paste0(root.name, "_", name)
+  }
+  saveRDS(mats, paste0(work.dir, "/", name,".Rds"))
+  return(mats)
+}
+
+gene.dist.summary <- function(dist.mats, work.dir = NULL, root.name = NULL) {
+  # we first make sure there is no NA
+  clusters <- names(dist.mats)
+  na <- sapply(dist.mats, function(x) any(is.na(x)))
+  if (sum(na) > 0) {
+    warning(paste0("NA detected for ", sum(na), " clusters. First 5:\n",
+                paste0(clusters[na][1:5], collapse = ", ")))
+    dist.mats <- dist.mats[!na]
+    clusters <- clusters[!na]
+  }
+  summary <- lapply(names(dist.mats), function(cluster) {
+    mat <- dist.mats[[cluster]]
+    stats <- list(cluster = cluster, n.genes = ncol(mat))
+    
+    diag(mat) <- 2
+    flat <- as.vector(mat)
+    names(flat) <- outer(rownames(mat), colnames(mat), function(x, y) return(paste0(x, ":", y))) %>% as.vector()
+    flat <- flat[flat != 2]
+    
+    stats$min <- min(flat)
+    stats$q1 <- quantile(flat, 0.25)
+    stats$median <- median(flat)
+    stats$q3 <- quantile(flat, 0.75)
+    stats$max <- max(flat)
+    
+    stats$min.pair <- names(flat)[which.min(flat)]
+    stats$q1.pair <- names(flat)[which.min(abs(flat - stats$q1))]
+    stats$median.pair <- names(flat)[which.min(abs(flat - stats$median))]
+    stats$q3.pair <- names(flat)[which.min(abs(flat - stats$q3))]
+    stats$max.pair <- names(flat)[which.max(flat)]
+    
+    as.data.frame(stats)
+  }) %>% do.call(rbind, .)
+  rownames(summary) <- NULL
+  if (!is.null(work.dir)) {
+    dir.create(work.dir, showWarnings = F, recursive = T)
+    name <- "dist_summary"
+    if (!is.null(root.name)) 
+      name <- paste0(root.name, "_", name)
+    write.table(summary, paste0(work.dir,"/", name, ".tsv"), quote = F, sep = "\t", row.names = F, col.names = T)
+    
+    pl <- lapply(c("min", "q1", "median", "q3", "max"), function(stat) {
+      ggplot(summary, aes_string(x = stat)) + geom_histogram(bins = 30) + 
+      ggtitle(stat)
+    })
+    scFanc::wrap.plots.fanc(pl, plot.out = paste0(work.dir, "/", name, "_histogram.png"))
+  }
+  invisible(summary)
+}
+
+

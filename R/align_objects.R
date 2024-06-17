@@ -119,6 +119,132 @@ mafft.fanc <- function(in.fa, tempt.fa = NULL, mafft = "/opt/apps/mafft/7.427/ma
   return(out.fa)
 }
 
+mafft.fanc.pairwise <- function(in.fa, ref, 
+                                tempt.dir = NULL, mafft = "/opt/apps/mafft/7.427/mafft", 
+                                aligned.fa = NULL, mafft.params = "--auto", threads = 1,
+                                double.check = F) {
+  seqinr.in <- seqinr::read.fasta(in.fa, forceDNAtolower = F)
+  in.seqs <- seqinr::getSequence(seqinr.in)
+  names(in.seqs) <- seqinr::getName(seqinr.in)
+  rm(seqinr.in)
+  
+  if (any(duplicated(names(in.seqs)))) {
+    stop("duplicated seq names found in in.fa")
+  }
+  
+  if (! ref %in% names(in.seqs)) {
+    stop("ref is not found in in.fa")
+  }
+  
+  ref.seq <- in.seqs[[ref]]
+  ref.length <- length(ref.seq)
+  if (is.null(tempt.dir)) tempt.dir <- tempdir()
+  tempt.dir <- paste0(tempt.dir, "/ref_", ref, "/")
+  
+  dir.create(paste0(tempt.dir), showWarnings = F, recursive = T)
+  
+  queries <- names(in.seqs) %>% .[. != ref]
+  aligned.raw <- utilsFanc::safelapply(queries, function(query.id) {
+    in.fa <- paste0(tempt.dir, "/", query.id, ".fa")
+    aligned.fa <- paste0(tempt.dir, "/", query.id, "_aln.fa")
+    seqinr::write.fasta(sequences = in.seqs[c(ref, query.id)], names = c(ref, query.id),
+                        file.out = in.fa)
+    cmd <- paste0(mafft, " ", mafft.params, " ", in.fa,  " > ", aligned.fa)
+    utilsFanc::cmd.exec.fanc(cmd = cmd, intern = F, run = T)
+    out.fa <- seqinr::read.fasta(aligned.fa, forceDNAtolower = F)
+    names <- names(out.fa)
+    out.fa <- seqinr::getSequence(out.fa)
+    names(out.fa) <- names
+    out.fa <- out.fa[c(ref, query.id)]
+    return(out.fa)
+  }, threads = threads)
+  
+  aligned.gapLabel <- lapply(aligned.raw, function(df) {
+    df <- as.data.frame(df)
+    df$pos.aln <- 1:nrow(df)
+    df <- rbind(df[df[, ref] != "-",], df[df[, ref] == "-",])
+    df$pos.ref <- 1:nrow(df)
+    df$pos.ref[df[, ref] == "-"] <- 0
+    if (max(df$pos.ref) != ref.length) {
+      stop("max(df$pos.ref) != ref.length")
+    }
+    df <- df %>% dplyr::arrange(pos.aln)
+    x <- rle(df$pos.ref)
+    gaps <- which(x$values == 0)
+    if (gaps[1] == 1) {
+      gaps <- gaps[-1]
+    }
+    x$values[gaps] <- x$values[gaps - 1]
+    df$pos.ref <- inverse.rle(x)
+    df$pos.ref <- make.unique(as.character(df$pos.ref))
+    df$pos.aln <- NULL
+    return(df)
+  })
+  
+  aligned <- Reduce(function(x, y) dplyr::full_join(x, y, by = c(ref, "pos.ref")), aligned.gapLabel)
+  
+  aligned$pos.int <- sub("\\..+$", "", aligned$pos.ref) %>% as.numeric()
+  aligned$pos.dec <- sub("^.+\\.", "", aligned$pos.ref) %>% as.numeric()
+  aligned$pos.dec[!grepl("\\.", aligned$pos.ref)] <- 0
+  
+  aligned <- aligned %>% arrange(pos.int, pos.dec)
+  
+  aligned[, c("pos.int", "pos.dec", "pos.ref")] <- NULL
+  aligned <- as.matrix(aligned)
+  
+  aligned[is.na(aligned)] <- "-"
+  aligned <- aligned[, c(ref, queries)]
+  if (double.check) {
+    # this part is to make sure that everything is correct: 
+    lapply(names(in.seqs), function(seq.name) {
+      ori <- in.seqs[[seq.name]] %>% tolower()
+      final <- aligned[, seq.name] %>% .[.!="-"] %>% tolower()
+      if (!identical(final, ori)) {
+        stop(paste0("sequence doesn't match for: ", seq.name))
+      }
+    })
+    
+    # make sure that the pairwise alignments are also preserved:
+    lapply(aligned.raw, function(aln.raw) {
+      aln.raw <- aln.raw %>% as.data.frame()
+      aln.final <- aligned[, c(names(aln.raw))]
+      aln.final <- aln.final[!(aln.final[, 1] == "-" & aln.final[, 2] == "-"), ] %>% 
+        as.data.frame()
+      
+      aln.final <- aln.final %>% lapply(tolower) %>% as.data.frame()
+      aln.raw <- aln.raw %>% lapply(tolower) %>% as.data.frame()
+      # print(head(aln.raw))
+      # print(head(aln.final))
+      if (!identical(aln.final, aln.raw)) {
+        stop(paste0("pairwise alignment couldn't be reproduced for: ", 
+                    paste0(names(aln.raw), sep = ", ")))
+      }
+    })
+  }
+  aligned <- as.list(as.data.frame(aligned))
+  
+  if (!is.null(aligned.fa)) {
+    dir.create(dirname(aligned.fa), showWarnings = F, recursive = T)
+    seqinr::write.fasta(aligned, names = names(aligned),
+                        file.out = aligned.fa)
+  }
+  return(aligned)
+}
+
+
+
+gap.summary <- function(x) {
+  # x needs to be a vector
+  # try: gap.summary(unlist(strsplit("---ATCG--A-", "")))
+  x <- x == "-"
+  r <- rle(x)
+  non.gap.length <- r$lengths
+  non.gap.length[r$values] <- 0
+  non.gap.cumsum <- cumsum(non.gap.length)
+  summ <- data.frame(gap.pos = non.gap.cumsum[r$values], gap.length = r$lengths[r$values])
+  return(summ)
+}
+
 
 prank.fanc <- function(in.fa, out.root.name = NULL, add.params = "", use.F = T, 
                        prank = PRANK, log.file = NULL) {
@@ -927,7 +1053,7 @@ slide.pid <- function(abao, ref.id, seqs.use.regex = NULL, seqs.rev.regex = NULL
                       win.size = 100, conservation.pids = 70, conservation.length = 100,
                       align.method = "mafft", pid.method = "vista",
                       regionID.color.map = NULL, pid.color.map = NULL,
-                      ymin = 50, ymax = 85, 
+                      ymin = 50, ymax = 85, remove.below.ymin = F,
                       npar.query = 1, rgbPeak.genome = "mm10",
                       out.dir = NULL, root.name = NULL, ...) {
   abao <- aba.import(abao)
@@ -996,7 +1122,8 @@ slide.pid <- function(abao, ref.id, seqs.use.regex = NULL, seqs.rev.regex = NULL
     # conservation bedgraph's and conservation bed's:
     browser.df <- lapply(names(vista.in), function(q) {
       bdg <- vista.score.2.bdg(score.file = paste0(vista.dir, "/", vista.root, "_", q, "_scores.txt"), 
-                        chr = abao@ori.df[ref.id, "chr"], start = abao@ori.df[ref.id, "start"])
+                        chr = abao@ori.df[ref.id, "chr"], start = abao@ori.df[ref.id, "start"],
+                        min.show = ifelse(remove.below.ymin, ymin, 0))
       beds <- sapply(conservation.pids, function(conservation.pid) {
         region.file <- paste0(vista.dir, "/", vista.root, "_", q, "_cons_", conservation.pid, "_", 
                               conservation.length,"_regions.txt")
@@ -1021,7 +1148,7 @@ slide.pid <- function(abao, ref.id, seqs.use.regex = NULL, seqs.rev.regex = NULL
       rgbPeak <- paste0(vista.dir, "/", vista.root, "_", q, "_cons_", 
                         paste0(conservation.pids, collapse = "_"), "_", 
                         conservation.length,"_regions.rgbPeak")
-      rgbPeak <- merge.bed.color(beds = beds, colors = pid.colors, 
+      rgbPeak <- utilsFanc::merge.bed.color(beds = beds, colors = pid.colors, 
                                  out.rgbPeak = rgbPeak, genome = rgbPeak.genome)
       
       # browser.df <- data.frame(regionID = q, name = paste0(q, "_", c("0pid", paste0(1:length(conservation.pids), "cons_", conservation.pids))), 

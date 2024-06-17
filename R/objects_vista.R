@@ -244,7 +244,7 @@ vista.score.2.bdg <- function(score.file, chr, start, out.bdg = NULL, min.show =
   scores <- scores %>% 
     dplyr::mutate(chr = chr, start = start + s - 1, 
                   end = start, score = score - min.show) %>% 
-    dplyr::filter(score > 0) %>% 
+    dplyr::filter(score >= 0) %>% 
     dplyr::select(chr, start, end, score)
   utilsFanc::write.zip.fanc(df = scores, out.file = out.bdg, bed.shift = T)
   return(out.bdg)

@@ -32,6 +32,7 @@ setClass(Class = "abao", slots = c(work.dir = "character", ori.df = "data.frame"
 aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
                        mask.lower.regex = NULL,
                        mafft = MAFFT.DEFAULT, mafft.params = MAFFT.AUTO,
+                       pairwise = F, pairwise.ref,
                        do.prank = F, prank = PRANK,
                        do.phyml = F, add.cons = T,
                        work.dir, threads = 1, fa.root.name = NULL) {
@@ -71,27 +72,44 @@ aba.create <- function(aba.df, genome = NULL, fa = NULL, df.is.bed,
     }
   }
   ori.fa.file <- paste0(work.dir, "/", fa.root.name, "in.fa")
-  aln.fa <- mafft.fanc(in.fa = ori.fa, tempt.fa = ori.fa.file,
-                      mafft = mafft, mafft.params = mafft.params,
-                       aligned.fa = paste0(work.dir, "/", fa.root.name, "aligned.fa"))
-  if (do.prank == T) {
-    prank.root <- paste0(work.dir, "/prank/", basename(ori.fa.file) %>% sub("in.fa", "prank",.))
-    trash <- prank.fanc(in.fa = ori.fa.file,
-                        out.root.name = prank.root,
-                        use.F = T, prank = prank)
+  if (!pairwise) {
+    aln.fa <- mafft.fanc(in.fa = ori.fa, tempt.fa = ori.fa.file,
+                         mafft = mafft, mafft.params = mafft.params,
+                         aligned.fa = paste0(work.dir, "/", fa.root.name, "aligned.fa"))
+    if (do.prank == T) {
+      prank.root <- paste0(work.dir, "/prank/", basename(ori.fa.file) %>% sub("in.fa", "prank",.))
+      trash <- prank.fanc(in.fa = ori.fa.file,
+                          out.root.name = prank.root,
+                          use.F = T, prank = prank)
+    }
+  } else {
+    print("Using pairwise alignment!")
+    seqinr::write.fasta(ori.fa, names = names(ori.fa), file.out = ori.fa.file)
+    aln.fa.file <- paste0(work.dir, "/", fa.root.name, "aligned.fa")
+    aln.fa <- mafft.fanc.pairwise(in.fa = ori.fa.file, ref = pairwise.ref,
+                        tempt.dir = paste0(work.dir, "/pairwise/"), aligned.fa = aln.fa.file,
+                        mafft = mafft, mafft.params = mafft.params, threads = threads)
   }
 
   map <- map.space(aligned.fa = aln.fa, threads = threads)
   abao <- new("abao", work.dir = work.dir, ori.df = aba.df,
               ori.gr = GenomicRanges::makeGRangesFromDataFrame(aba.df, keep.extra.columns = T),
               ori.fa = ori.fa, aln.fa = aln.fa, map = map,
-              meta.data = list(mafft = mafft, mafft.params = mafft.params, fa.root.name = fa.root.name))
+              meta.data = list(mafft = mafft, mafft.params = mafft.params, fa.root.name = fa.root.name,
+                               align.type = ifelse(pairwise, "pairwise", "msa"),
+                               align.ref = ifelse(pairwise, pairwise.ref, NA)))
 
   fasta2phylip(in.fasta = paste0(abao@work.dir, "/", fa.root.name, "aligned.fa"))
   saveRDS(abao, paste0(abao@work.dir, "/abao.Rds"))
   aba.write.ori.df(abao)
-  if (add.cons)
-    abao <- aba.add.consensus(abao)
+  if (add.cons) {
+    if (pairwise) {
+      abao <- aba.add.consensus.ref(abao, ref = pairwise.ref)
+    } else {
+      abao <- aba.add.consensus(abao)
+    }
+  }
+    
   # abao <- aba.add.consensus(abao, shrink.all = T)
   if (do.phyml) {
     phyml.GTR.GIF(in.phy = paste0(abao@work.dir, "/", fa.root.name, "aligned.phy"))
@@ -546,6 +564,48 @@ aba.write.consensus <- function(abao, cons.name = NULL, shrink, out.dir = NULL, 
   return()
 }
 
+aba.add.consensus.ref <- function(abao, ref) {
+  # for example, you might want to align all Nkrp genes to NK1.1
+  if (! ref %in% abao@ori.df$regionID) 
+    stop("ref not found in abao")
+  cons.name <- paste0("ref..", ref)
+  cons <- list()
+  cons$seq <- abao@aln.fa[[ref]]
+  cons$seq.shrink <- abao@ori.fa[[ref]]
+  cons$cons.score <- rep(NA, length(cons$seq))
+  cons$cons.score.shrink <- rep(NA, length(cons$seq.shrink))
+  
+  cons$shrink.map <- data.frame(seq = cons$seq, pos.full = 1:length(cons$seq)) %>% 
+    dplyr::filter(seq != "-") %>% dplyr::mutate(., pos.shrink = 1:nrow(.))
+  cons$name <- cons.name
+  cons$doc <- cons.name
+  abao@meta.data$consensus[[cons.name]] <- cons
+  
+  ## writing out results
+  out.dir <- paste0(abao@work.dir, "/cons/", cons.name, "/")
+  dir.create(out.dir, showWarnings = F, recursive = T)
+  
+  out.file <- paste0(out.dir, "/", abao@meta.data$fa.root.name, cons.name, ".fa")
+  seqinr::write.fasta(sequences =  cons$seq, names = cons.name, file.out = out.file)
+  
+  out.file <- paste0(out.dir, "/", abao@meta.data$fa.root.name, cons.name, "_shrink.fa")
+  seqinr::write.fasta(sequences =  cons$seq.shrink, names = cons.name, file.out = out.file)
+  
+  lapply(c(T, F), function(bOmit.cons) {
+    lapply(c(T, F), function(bShrink) {
+      omit <- ifelse(bOmit.cons, "",  "_wCons")
+      shrink <- ifelse(bShrink, "_shrink", "")
+      out.file <- paste0(out.dir, "/", abao@meta.data$fa.root.name, cons.name,
+                         shrink, omit, ".fa")
+      aba.write.consensus.with.aln.2(abao = abao, cons.name = cons.name,
+                                     omit.cons = bOmit.cons, shrink = bShrink,
+                                     out.file = out.file)
+    })
+  })
+  return(abao)
+}
+
+
 bp.df.gen <- function(data.gr, region.df=NULL) {
   if (is.null(region.df))
     region.df <- data.gr
@@ -889,6 +949,7 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
                             broadcast = F, fill.gap = T,
                             consensus.name, shrink = T,
                             write.consensus = T, consensus.add.N = NULL,
+                            use.chr.name = NULL, shift = NULL,
                             x.lim = NULL,
                             return.matrix = F, out.dir = NULL, root.name = NULL,
                             samtools = SAMTOOLS, bedtools = BEDTOOLS,
@@ -1044,7 +1105,13 @@ aba.write.track <- function(abao, smart.cut.df = NULL, track.name = NULL, track.
           warning("add bedtools to your PATH. Otherwise you will get an error")
           track <- utilsFanc::collapse.bed.fanc(in.bed = track, bedtools.path = bedtools)
         }
-
+        if (!is.null(use.chr.name)) {
+          track$chr <- use.chr.name
+        }
+        if (!is.null(shift)) {
+          track$start <- track$start + shift
+          track$end <- track$end + shift
+        }
         track.file <- utilsFanc::write.zip.fanc(df = track,
                                            out.file = paste0(out.dir, "/", track.name, ".", track.type),
                                            bed.shift = F)
