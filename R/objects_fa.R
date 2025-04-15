@@ -1,3 +1,11 @@
+revcomp <- function(x) {
+  dict <- c("A", "T", "C", "G", "N", "a", "t", "c", "g", "n")
+  names(dict) <- c("T", "A", "G", "C", "N", "t", "a", "g", "c", "n")
+  if (any(!x %in% names(dict))) {
+    stop("some of the elements of x are not within A, T, C, G, N")
+  }
+  return(rev(dict[x]))
+}
 add.fa <- function(df, outdir) {
   system(paste0("mkdir -p ", outdir))
   df$fa <- paste0(outdir, "/", df$acc, ".fasta")
@@ -123,7 +131,8 @@ get.fasta.core <- function(genome.fa, chr, start, end, strand=NULL,
 
 
 get.fasta.gr <- function(gr, id.col = NULL, genome, fa = NULL, outfile = NULL,
-                          drop.strand = F,
+                         memory.mode = F, threads = 1, 
+                         drop.strand = F,
                          wrap.fa = F, return.fa = T, as.string = T, print.cmd = T,
                          bedtools = "/bar/cfan/anaconda2/envs/jupyter/bin/bedtools") {
   # written: 2022-01-10. latest function of this get fasta family.
@@ -138,34 +147,101 @@ get.fasta.gr <- function(gr, id.col = NULL, genome, fa = NULL, outfile = NULL,
     gr$id <- paste0("region_", 1:length(gr), "|",utilsFanc::gr.get.loci(gr), strand(gr))
   }
   id.vec <- mcols(gr)[, id.col] %>% as.character()
+  
+  if (any(duplicated(id.vec))) {
+    stop("any(duplicated(id.vec))")
+  }
   mcols(gr) <- NULL
   gr$id <- id.vec
 
-  bed <- tempfile()
-  if (is.null(outfile))
-    outfile <- tempfile()
-  dir.create(dirname(outfile), showWarnings = F, recursive = T)
-  trash <- utilsFanc::write.zip.fanc(df = gr, out.file = bed, bed.shift = T, zip = F)
-  s <- "-s"
-  if (drop.strand)
-    s <- ""
-  cmd <- paste0(bedtools, " getfasta ", s, " -fi ", fa, " -fo ", outfile, " -bed ", bed, " -name")
-  if (print.cmd == T)
-    print(cmd)
-  system(cmd)
-  if (wrap.fa == T)
-    abaFanc2::fasta.wrap.fanc(in.fa = outfile)
-  if (return.fa == T) {
-    res.fa <- seqinr::read.fasta(outfile, as.string = as.string, forceDNAtolower = F)
-    names(res.fa) <- names(res.fa) %>% sub("\\([\\+\\-]\\)$", "", .)
-    if (! identical(names(res.fa), id.vec )) {
-      stop("! identical(names(res.fa), id.vec )")
+  if (memory.mode) {
+    print("get.fasta.gr is using memory mode")
+    stop("memory mode doesn't work that well. It's not faster. And it crashes with multi-threading")
+    grs <- split(gr, f = seqnames(gr))
+    res.fa <- lapply(grs, function(gr) {
+      bed <- tempfile()
+      chr = seqnames(gr)[1]
+      trash <- utilsFanc::write.zip.fanc(
+        df = data.frame(chr = chr, start = min(start(gr)), end = max(end(gr))), 
+        out.file = bed, bed.shift = T, zip = F)
+      outfile <- tempfile()
+      s <- ""
+      cmd <- paste0(bedtools, " getfasta ", s, " -fi ", fa, " -fo ", outfile, " -bed ", bed, " -name")
+      if (print.cmd == T)
+        print(cmd)
+      system(cmd)
+      fa <- seqinr::getSequence(seqinr::read.fasta(outfile, forceDNAtolower = F))[[1]]
+      
+      df <- utilsFanc::gr2df(gr)
+      pos <- min(df$start)
+      df$start <- df$start - pos + 1
+      df$end <- df$end - pos + 1
+      seqs <- utilsFanc::safelapply(1:nrow(df), function(i) {
+        seq <- fa[df[i, "start"]:df[i, "end"]]
+        if (df[i, "strand"] == "-") 
+          seq <- revcomp(seq)
+        if (as.string) 
+          seq <- paste0(seq, collapse = "")
+        return(seq)
+      }, threads = threads)
+      names(seqs) <- df$id
+      return(seqs)
+    }) %>% Reduce(c, .)
+    res.fa <- res.fa[utilsFanc::sort.by(names(res.fa), id.vec, return.order = T)]
+    if (!is.null(outfile)) {
+      dir.create(dirname(outfile), showWarnings = F, recursive = T)
+      seqinr::write.fasta(res.fa, names = names(res.fa), as.string = as.string,
+                          file.out = outfile)
     }
-    return(res.fa)
+    if (return.fa) {
+      return(res.fa)
+    }
+    return()
+  } else{
+    bed <- tempfile()
+    if (is.null(outfile))
+      outfile <- tempfile()
+    dir.create(dirname(outfile), showWarnings = F, recursive = T)
+    trash <- utilsFanc::write.zip.fanc(df = gr, out.file = bed, bed.shift = T, zip = F)
+    s <- "-s"
+    if (drop.strand)
+      s <- ""
+    cmd <- paste0(bedtools, " getfasta ", s, " -fi ", fa, " -fo ", outfile, " -bed ", bed, " -name")
+    if (print.cmd == T)
+      print(cmd)
+    system(cmd)
+    if (wrap.fa == T)
+      abaFanc2::fasta.wrap.fanc(in.fa = outfile)
+    if (return.fa == T) {
+      res.fa <- seqinr::read.fasta(outfile, as.string = as.string, forceDNAtolower = F)
+      names(res.fa) <- names(res.fa) %>% sub("\\([\\+\\-]\\)$", "", .) %>% sub("::.+$", "", .)
+      if (! identical(names(res.fa), id.vec )) {
+        stop("! identical(names(res.fa), id.vec )")
+      }
+      return(res.fa)
+    }
+    return()
   }
-  return()
 }
-
+# t <- data.frame(chr = "chr6", start = 1000001:1000002, end = 1000201:1000202, strand = c("+", "-")) 
+# t2 <- t
+# t2$chr <- "chr1"
+# 
+# gr <- rbind(t, t2) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+# 
+# gr$id <- utilsFanc::gr.get.loci(gr)
+# 
+# r1 <- get.fasta.gr(gr = gr, id.col = "id", genome = "hg38_conv", memory.mode = T, return.fa = T, as.string = T,
+#                    bedtools = "~/software/bedtools/bedtools")
+# 
+# r2 <- get.fasta.gr(gr = gr, id.col = "id", genome = "hg38_conv", memory.mode = F, return.fa = T, as.string = T,
+#                    bedtools = "~/software/bedtools/bedtools")
+# 
+# r2 <- lapply(r2, function(x) {
+#   attributes(x) <- NULL
+#   return(x)
+# })
+# identical(r1, r2) # TRUE
 label.gaps <- function(fa, out.bed = NULL) {
   if (is.null(out.bed)) {
     out.bed <- paste0(tools::file_path_sans_ext(fa), "_gaps.bed")
