@@ -1,6 +1,6 @@
 igv.hubgen <- function(files.vec, urls.vec = NULL, names.vec=NULL, xml.file=NULL, no.writing = F,
-                       default.registry = "/bar/cfan/software/igv/server/default_registry.txt",
-                       default.xml = "/bar/cfan/software/igv/server/default_xml.txt",
+                       default.registry = "~/software/igv/server/default_registry.txt",
+                       default.xml = "~/software/igv/server/default_xml.txt",
                        global.name = NULL, registry.file = NULL, override.xml, override.registry) {
   if (is.null(urls.vec))
     urls.vec <- files.vec %>% utilsFanc::bash2ftp()
